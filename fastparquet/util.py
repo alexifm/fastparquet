@@ -38,6 +38,17 @@ def default_open(f, mode='rb'):
     return open(f, mode)
 
 
+def correct_periods(df, period_metadata):
+    for col in period_metadata:
+        freq = period_metadata[col]['freq']
+        if is_categorical_dtype(df[col]):
+            df[col] = df[col].cat.rename_categories(
+                lambda dt: dt.to_period(freq))
+        else:
+            df[col] = df[col].dt.to_period(freq)
+    return df
+
+
 def val_to_num(x):
     """Parse a string as a number, date or timedelta if possible"""
     if isinstance(x, numbers.Real):

@@ -16,6 +16,7 @@ from .thrift_structures import write_thrift
 
 try:
     from pandas.api.types import is_categorical_dtype
+    from pandas.api.types import is_period_dtype
 except ImportError:
     # Pandas <= 0.18.1
     from pandas.core.common import is_categorical_dtype
@@ -26,7 +27,7 @@ from . import encoding, api
 from .util import (default_open, default_mkdirs,
                    PY2, STR_TYPE,
                    check_column_names, metadata_from_many, created_by,
-                   get_column_metadata)
+                   get_column_metadata, correct_periods)
 from .speedups import array_encode_utf8, pack_byte_array
 
 MARKER = b'PAR1'
@@ -647,7 +648,8 @@ def make_part_file(f, data, schema, compression=None, fmd=None):
 
 
 def make_metadata(data, has_nulls=True, ignore_columns=[], fixed_text=None,
-                  object_encoding=None, times='int64', index_cols=[]):
+                  object_encoding=None, times='int64', index_cols=[],
+                  partition_columns=[], period_metadata={}):
     if not data.columns.is_unique:
         raise ValueError('Cannot create parquet dataset with duplicate'
                          ' column names (%s)' % data.columns)
@@ -655,13 +657,18 @@ def make_metadata(data, has_nulls=True, ignore_columns=[], fixed_text=None,
         index_cols = [{'name': index_cols.name, 'start': index_cols._start,
                        'stop': index_cols._stop, 'step': index_cols._step,
                        'kind': 'range'}]
-    pandas_metadata = {'index_columns': index_cols,
-                       'columns': [], 'pandas_version': pd.__version__,
-                       'column_indexes': [{'name': data.columns.name,
-                                           'field_name': data.columns.name,
-                                           'pandas_type': 'mixed-integer',
-                                           'numpy_type': 'object',
-                                           'metadata': None}]}
+    pandas_metadata = {
+        'index_columns': index_cols,
+        'partition_columns': [],
+        'columns': [],
+        'pandas_version': pd.__version__ + "_custom",
+        'column_indexes': [{'name': data.columns.name,
+                            'field_name': data.columns.name,
+                            'pandas_type': 'mixed-integer',
+                            'numpy_type': 'object',
+                            'metadata': None}],
+        'period_metadata': period_metadata
+    }
     root = parquet_thrift.SchemaElement(name='schema',
                                         num_children=0)
 
@@ -856,14 +863,27 @@ def write(filename, data, row_group_offsets=50000000,
         index_cols = []
     check_column_names(data.columns, partition_on, fixed_text, object_encoding,
                        has_nulls)
+
+    period_metadata = make_period_metadata(data)
+    for col in period_metadata:
+        if is_categorical_dtype(data[col]):
+            data[col] = data[col].cat.rename_categories(
+                lambda dt: dt.to_timestamp())
+        else:
+            data[col] = data[col].dt.to_timestamp()
+
     ignore = partition_on if file_scheme != 'simple' else []
+    partition_columns = []
     fmd = make_metadata(data, has_nulls=has_nulls, ignore_columns=ignore,
                         fixed_text=fixed_text, object_encoding=object_encoding,
-                        times=times, index_cols=index_cols)
+                        times=times, index_cols=index_cols,
+                        period_metadata=period_metadata,
+                        partition_columns=partition_columns)
 
     if file_scheme == 'simple':
         write_simple(filename, data, fmd, row_group_offsets,
                      compression, open_with, has_nulls, append)
+        data = correct_periods(data, period_metadata)
     elif file_scheme in ['hive', 'drill']:
         if append:
             pf = api.ParquetFile(filename, open_with=open_with)
@@ -903,6 +923,8 @@ def write(filename, data, row_group_offsets=50000000,
         write_common_metadata(fn, fmd, open_with, no_row_groups=False)
         write_common_metadata(join_path(filename, '_common_metadata'), fmd,
                               open_with)
+
+        data = correct_periods(data, period_metadata)
     else:
         raise ValueError('File scheme should be simple|hive, not', file_scheme)
 
@@ -1008,6 +1030,21 @@ def consolidate_categories(fmd):
                             'num_categories']:
                         cat['metadata']['num_categories'] = int(ncats[0])
     key_value.value = json.dumps(meta, sort_keys=True)
+
+
+def make_period_metadata(data):
+    period_metadata = {}
+    for col, dtype in data.dtypes.items():
+        if is_period_dtype(dtype):
+            period_metadata[col] = {
+                'freq': data[col].dt.freq.freqstr
+            }
+        if is_categorical_dtype(dtype) and \
+                is_period_dtype(dtype.categories):
+            period_metadata[col] = {
+                'freq': data[col].dtype.categories.freqstr
+            }
+    return period_metadata
 
 
 def merge(file_list, verify_schema=True, open_with=default_open,
