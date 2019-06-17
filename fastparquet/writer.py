@@ -958,7 +958,21 @@ def partition_on_columns(data, columns, root_path, partname, fmd,
     if not remaining:
         raise ValueError("Cannot include all columns in partition_on")
     rgs = []
-    for key, group in zip(sorted(gb.indices), sorted(gb)):
+    try:
+        gb_indices = gb.indices
+    except TypeError:
+        grpr = gb.grouper
+
+        if len(grpr.groupings) == 1:
+            gb_indices = grpr.groupings[0].indices
+        else:
+            label_list = [ping.labels for ping in grpr.groupings]
+            keys = [pd.core.common.values_from_object(ping.group_index)
+                    for ping in grpr.groupings]
+            new_keys = [np.array(key) for key in keys]
+            gb_indices = pd.core.sorting.get_indexer_dict(label_list, new_keys)
+
+    for key, group in zip(sorted(gb_indices), sorted(gb)):
         if group[1].empty:
             continue
         df = group[1][remaining]
