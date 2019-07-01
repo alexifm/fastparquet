@@ -921,10 +921,9 @@ def write(filename, data, row_group_offsets=50000000,
 
                 fmd.row_groups.append(rg)
 
-        with meta_data_lock:
-            write_common_metadata(fn, fmd, open_with, no_row_groups=False)
-            write_common_metadata(join_path(filename, '_common_metadata'),
-                fmd, open_with)
+        write_common_metadata(fn, fmd, open_with, no_row_groups=False)
+        write_common_metadata(join_path(filename, '_common_metadata'),
+            fmd, open_with)
 
         data = correct_periods(data, period_metadata)
     else:
