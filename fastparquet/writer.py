@@ -749,7 +749,7 @@ def write(filename, data, row_group_offsets=50000000,
           compression=None, file_scheme='simple', open_with=default_open,
           mkdirs=default_mkdirs, has_nulls=True, write_index=None,
           partition_on=[], fixed_text=None, append=False,
-          object_encoding='infer', times='int64', meta_data_lock=None):
+          object_encoding='infer', times='int64'):
     """ Write Pandas DataFrame to filename as Parquet Format
 
     Parameters
@@ -845,10 +845,6 @@ def write(filename, data, row_group_offsets=50000000,
     --------
     >>> fastparquet.write('myfile.parquet', df)  # doctest: +SKIP
     """
-
-    if meta_data_lock is None:
-        meta_data_lock = suppress()
-
     if str(has_nulls) == 'infer':
         has_nulls = None
     if isinstance(row_group_offsets, int):
@@ -925,11 +921,10 @@ def write(filename, data, row_group_offsets=50000000,
 
                 fmd.row_groups.append(rg)
 
-        # with meta_data_lock:
-        print("writing metadata")
-        write_common_metadata(fn, fmd, open_with, no_row_groups=False)
-        write_common_metadata(join_path(filename, '_common_metadata'),
-            fmd, open_with)
+        with meta_data_lock:
+            write_common_metadata(fn, fmd, open_with, no_row_groups=False)
+            write_common_metadata(join_path(filename, '_common_metadata'),
+                fmd, open_with)
 
         data = correct_periods(data, period_metadata)
     else:
