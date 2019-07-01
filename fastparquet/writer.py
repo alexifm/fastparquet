@@ -902,7 +902,7 @@ def write(filename, data, row_group_offsets=50000000,
                                  ' match existing data')
         else:
             i_offset = 0
-
+        fn = join_path(filename, '_metadata')
         mkdirs(filename)
         for i, start in enumerate(row_group_offsets):
             end = (row_group_offsets[i+1] if i < (len(row_group_offsets) - 1)
@@ -926,10 +926,9 @@ def write(filename, data, row_group_offsets=50000000,
                 fmd.row_groups.append(rg)
 
         with meta_data_lock:
-            fn = join_path(filename, '_metadata')
             write_common_metadata(fn, fmd, open_with, no_row_groups=False)
-            fn = join_path(filename, '_common_metadata')
-            write_common_metadata(fn, fmd, open_with)
+            write_common_metadata(join_path(filename, '_common_metadata'),
+                fmd, open_with)
 
         data = correct_periods(data, period_metadata)
     else:
