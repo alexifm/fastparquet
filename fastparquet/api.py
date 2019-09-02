@@ -11,6 +11,7 @@ import six
 import struct
 import warnings
 
+from ordered_set import OrderedSet
 import numpy as np
 from fastparquet.util import join_path
 
@@ -185,13 +186,15 @@ class ParquetFile(object):
                 if self.file_scheme == 'hive':
                     partitions = s.findall(path)
                     for key, val in partitions:
-                        cats.setdefault(key, set()).add(val_to_num(val))
-                        raw_cats.setdefault(key, set()).add(val)
+                        cats \
+                            .setdefault(key, OrderedSet()) \
+                            .append(val_to_num(val))
+                        raw_cats.setdefault(key, OrderedSet()).add(val)
                 else:
                     for i, val in enumerate(col.file_path.split('/')[:-1]):
                         key = 'dir%i' % i
-                        cats.setdefault(key, set()).add(val_to_num(val))
-                        raw_cats.setdefault(key, set()).add(val)
+                        cats.setdefault(key, OrderedSet()).add(val_to_num(val))
+                        raw_cats.setdefault(key, OrderedSet()).add(val)
 
         for key, v in cats.items():
             # Check that no partition names map to the same value after transformation by val_to_num
@@ -199,7 +202,7 @@ class ParquetFile(object):
             if len(v) != len(raw):
                 conflicts_by_value = OrderedDict()
                 for raw_val in raw_cats[key]:
-                    conflicts_by_value.setdefault(val_to_num(raw_val), set()).add(raw_val)
+                    conflicts_by_value.setdefault(val_to_num(raw_val), OrderedSet()).add(raw_val)
                 conflicts = [c for k in conflicts_by_value.values() if len(k) > 1 for c in k]
                 raise ValueError("Partition names map to the same value: %s" % conflicts)
             vals_by_type = groupby_types(v)
